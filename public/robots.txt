@@ -1,0 +1,37 @@
+#
+# robots.txt for DailyTaskPay
+#
+# This file tells search engine crawlers which URLs they can access on your site.
+# It helps guide crawlers to your important pages while avoiding unnecessary crawling
+# of non-essential or private pages.
+#
+# SEO Notes:
+# - User-agent: * applies to all search engine bots
+# - Allow: / permits crawling of all pages (except disallowed)
+# - Sitemap helps search engines find all important pages
+# - Place this file at the root of your domain
+#
+
+# Allow all search engine crawlers to access all sections
+User-agent: *
+Allow: /
+
+# Disallow crawling of private/auth pages that shouldn't be indexed
+# These pages require authentication or are not useful for search results
+Disallow: /dashboard/
+Disallow: /wallet/
+Disallow: /withdraw/
+Disallow: /tasks/
+Disallow: /my-tasks/
+Disallow: /profile/
+Disallow: /notifications/
+Disallow: /banned/
+Disallow: /contest/
+Disallow: /leaderboard/
+Disallow: /friend-leaderboard/
+Disallow: /referral/
+Disallow: /rewards/
+
+# Sitemap location - helps search engines discover all your important pages
+# This should point to your sitemap.xml file
+Sitemap: https://dailytaskpay.com/sitemap.xml
