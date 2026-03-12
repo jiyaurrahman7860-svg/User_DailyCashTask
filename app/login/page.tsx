@@ -1,32 +1,75 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth'
+import { signInWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '@/lib/firebase/config'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Wallet, Mail, Lock, Eye, EyeOff, Chrome } from 'lucide-react'
+import { signInWithGoogle, storeReferralCode, handleGoogleRedirectResult } from '@/lib/firebase/googleAuth'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  /**
+   * Handle referral code from URL on page load
+   * Store it in localStorage for use during Google sign-in
+   */
+  useEffect(() => {
+    const refCode = searchParams.get('ref')
+    if (refCode) {
+      console.log('[Login] Referral code detected in URL:', refCode)
+      storeReferralCode(refCode)
+    }
+
+    // Check for Google redirect result (for mobile flow)
+    const checkRedirectResult = async () => {
+      const result = await handleGoogleRedirectResult(refCode)
+      if (result.success && result.user) {
+        console.log('[Login] Google redirect login successful')
+        router.push('/dashboard')
+      }
+    }
+    
+    checkRedirectResult()
+  }, [searchParams, router])
+
+  /**
+   * Handle Google Sign-In
+   * Uses centralized googleAuth utility that:
+   * 1. Authenticates with Firebase
+   * 2. Creates Firestore document for new users
+   * 3. Loads existing data for returning users
+   * 4. Handles referral codes automatically
+   */
   const handleGoogleSignIn = async () => {
     setError('')
     setLoading(true)
 
     try {
-      const provider = new GoogleAuthProvider()
-      await signInWithPopup(auth, provider)
-      router.push('/dashboard')
+      // Get referral code from URL if present
+      const refCode = searchParams.get('ref')
+      
+      // Use centralized Google auth with popup flow
+      const result = await signInWithGoogle(false, refCode)
+      
+      if (result.success) {
+        console.log('[Login] Google sign-in successful, redirecting to dashboard...')
+        router.push('/dashboard')
+      } else {
+        setError(result.error || 'Failed to sign in with Google')
+      }
     } catch (err: any) {
+      console.error('[Login] Google sign-in error:', err)
       setError(err.message || 'Failed to sign in with Google')
     } finally {
       setLoading(false)

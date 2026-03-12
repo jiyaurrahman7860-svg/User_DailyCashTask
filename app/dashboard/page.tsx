@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { doc, getDoc, collection, query, where, onSnapshot, orderBy, limit, getDocs } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,9 +16,10 @@ import { MobileMenu } from '@/components/mobile-menu'
 import { Wallet, CheckCircle, Users, ArrowUpRight, Plus, Gift, Trophy, LogOut, ExternalLink, TrendingUp } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRegisterScrollRefresh } from '@/contexts/ScrollRefreshContext'
-import { formatRelativeTime, formatActivityTimestamp } from '@/lib/utils/formatTime'
+import { formatActivityTimestamp } from '@/lib/utils/formatTime'
+import { fetchUserDataWithRetry } from '@/lib/firebase/googleAuth'
 
-interface UserData {
+interface DashboardUserData {
   userId: string
   name: string
   email: string
@@ -54,7 +55,7 @@ interface Task {
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
-  const [userData, setUserData] = useState<UserData | null>(null)
+  const [userData, setUserData] = useState<DashboardUserData | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,9 +96,16 @@ export default function DashboardPage() {
       setUser(currentUser)
       userRef.current = currentUser
 
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid))
-      if (userDoc.exists()) {
-        const userData = userDoc.data() as UserData
+      const userDataResult = await fetchUserDataWithRetry(currentUser.uid)
+        
+        if (!userDataResult.exists || !userDataResult.data) {
+          console.error('[Dashboard] User document not found, redirecting to login...')
+          toast.error('Account not found. Please login again.')
+          router.push('/login')
+          return
+        }
+        
+        const userData = userDataResult.data as DashboardUserData
         
         // Check if user is banned
         if (userData.isBanned) {
@@ -106,7 +114,6 @@ export default function DashboardPage() {
         }
         
         setUserData(userData)
-      }
 
       const q = query(
         collection(db, 'transactions'),
@@ -191,12 +198,11 @@ export default function DashboardPage() {
     
     console.log('[ScrollRefresh] Refreshing dashboard data...')
     
-    // Refresh user data
+    // Refresh user data with retry
     try {
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid))
-      if (userDoc.exists()) {
-        const newUserData = userDoc.data() as UserData
-        setUserData(newUserData)
+      const userDataResult = await fetchUserDataWithRetry(currentUser.uid)
+      if (userDataResult.exists && userDataResult.data) {
+        setUserData(userDataResult.data as DashboardUserData)
       }
     } catch (error) {
       console.error('Error refreshing user data:', error)

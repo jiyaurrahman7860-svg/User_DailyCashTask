@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { createUserWithEmailAndPassword, updateProfile, signInWithPopup, GoogleAuthProvider } from 'firebase/auth'
-import { doc, setDoc, getDocs, query, collection, where, getDoc } from 'firebase/firestore'
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
+import { doc, setDoc, getDocs, query, collection, where } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card'
 import { Wallet, User, Mail, Lock, Eye, EyeOff, Gift, Chrome } from 'lucide-react'
 import { storeUserSecurity, checkFraudOnSignup, generateDeviceFingerprint, getIPAddress } from '@/lib/firebase/fraud'
 import { giveSignupBonus, processSignupReferral } from '@/lib/firebase/functions'
+import { signInWithGoogle, storeReferralCode, handleGoogleRedirectResult } from '@/lib/firebase/googleAuth'
 import toast from 'react-hot-toast'
 
 function generateUserId() {
@@ -37,84 +38,62 @@ export default function SignupPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  /**
+   * Handle referral code from URL on page load
+   * Store it in localStorage for use during Google sign-in
+   */
+  useEffect(() => {
+    const refCode = searchParams.get('ref')
+    if (refCode) {
+      console.log('[Signup] Referral code detected in URL:', refCode)
+      storeReferralCode(refCode)
+    }
+
+    // Check for Google redirect result (for mobile flow)
+    const checkRedirectResult = async () => {
+      const result = await handleGoogleRedirectResult(refCode)
+      if (result.success && result.user) {
+        console.log('[Signup] Google redirect signup successful')
+        router.push('/dashboard')
+      }
+    }
+    
+    checkRedirectResult()
+  }, [searchParams, router])
+
+  /**
+   * Handle Google Sign-In
+   * Uses centralized googleAuth utility that:
+   * 1. Authenticates with Firebase
+   * 2. Creates Firestore document for new users (with referral support)
+   * 3. Loads existing data for returning users
+   * 4. Handles referral codes automatically from URL or localStorage
+   */
   const handleGoogleSignIn = async () => {
     setError('')
     setLoading(true)
 
     try {
-      const provider = new GoogleAuthProvider()
-      const result = await signInWithPopup(auth, provider)
-      const user = result.user
-
-      // Check if user already exists in database
-      const userDoc = await getDoc(doc(db, 'users', user.uid))
+      // Get referral code from URL if present, otherwise use stored code
+      const refCode = searchParams.get('ref')
       
-      if (!userDoc.exists()) {
-        // New user - create user document
-        const userId = generateUserId()
-        const name = user.displayName || 'User'
-        const newReferralCode = generateReferralCode(name)
-        const email = user.email || ''
-
-        let referredBy = null
-        if (referralCode) {
-          const q = query(collection(db, 'users'), where('referralCode', '==', referralCode.toUpperCase()))
-          const querySnapshot = await getDocs(q)
-          if (!querySnapshot.empty) {
-            referredBy = querySnapshot.docs[0].id
-          }
+      // Use centralized Google auth with popup flow
+      const result = await signInWithGoogle(false, refCode)
+      
+      if (result.success) {
+        console.log('[Signup] Google sign-in successful, redirecting to dashboard...')
+        
+        // Show toast for new users
+        if (result.isNewUser) {
+          toast.success('Account created successfully! Welcome bonus added.')
         }
-
-        await setDoc(doc(db, 'users', user.uid), {
-          userId,
-          name,
-          email,
-          walletBalance: 0,
-          referralCode: newReferralCode,
-          referredBy,
-          level: 1,
-          createdAt: new Date().toISOString(),
-          tasksCompleted: 0,
-          totalEarned: 0,
-        })
-
-        // Call Cloud Function to process referral after user document is created
-        if (referredBy) {
-          try {
-            await processSignupReferral({
-              referralCode: referralCode.toUpperCase().trim(),
-              userId: user.uid,
-              userName: name,
-              userEmail: email
-            })
-            console.log('Referral processed successfully via Cloud Function')
-          } catch (referralError: any) {
-            console.error('Error processing referral:', referralError)
-            // Continue even if referral processing fails
-            // The user account is already created
-          }
-        }
-
-        // Store user security info for anti-fraud
-        await storeUserSecurity(user.uid)
-
-        // Give signup bonus
-        try {
-          const deviceFingerprint = generateDeviceFingerprint()
-          const ipAddress = await getIPAddress()
-          const bonusResult = await giveSignupBonus({ ipAddress, deviceFingerprint }) as { data: { success: boolean; message: string; amount?: number } }
-          
-          if (bonusResult.data.success) {
-            console.log('Signup bonus granted:', bonusResult.data.message)
-          }
-        } catch (bonusError) {
-          console.error('Error giving signup bonus:', bonusError)
-        }
+        
+        router.push('/dashboard')
+      } else {
+        setError(result.error || 'Failed to sign in with Google')
       }
-
-      router.push('/dashboard')
     } catch (err: any) {
-      console.error('Google sign-in error:', err)
+      console.error('[Signup] Google sign-in error:', err)
       setError(err.message || 'Failed to sign in with Google')
     } finally {
       setLoading(false)
