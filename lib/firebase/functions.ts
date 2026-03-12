@@ -1,5 +1,5 @@
 import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions'
-import { app } from './firebaseConfig'
+import app from './config'
 
 const functions = getFunctions(app)
 
