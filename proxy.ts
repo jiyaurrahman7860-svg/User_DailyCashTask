@@ -38,10 +38,10 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 /**
- * Main middleware function
+ * Main proxy function
  * Runs on every request to determine routing based on subdomain
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   // Get the host header from the request
   // This will be something like: "blog.dailytaskpay.com" or "dailytaskpay.com"
   const host = request.headers.get('host') || ''
@@ -49,7 +49,7 @@ export function middleware(request: NextRequest) {
   // Get the current URL pathname
   const pathname = request.nextUrl.pathname
   
-  // Skip middleware for static files, API routes, and Next.js internals
+  // Skip proxy for static files, API routes, and Next.js internals
   // These should be served directly without subdomain routing
   if (
     pathname.startsWith('/_next/') ||
@@ -100,9 +100,9 @@ export function middleware(request: NextRequest) {
 }
 
 /**
- * Middleware Matcher Configuration
+ * Proxy Matcher Configuration
  * 
- * This determines which routes the middleware runs on.
+ * This determines which routes the proxy runs on.
  * We're excluding static files and API routes to improve performance.
  */
 export const config = {
