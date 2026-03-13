@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { collection, query, where, onSnapshot, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore'
-import { auth, db } from '@/lib/firebase/config'
+import { auth, db, testFirestoreConnection, getMissingEnvVars } from '@/lib/firebase/config'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Navbar } from '@/components/navbar'
@@ -13,7 +13,7 @@ import { Sidebar } from '@/components/sidebar'
 import { MobileBottomNav } from '@/components/mobile-bottom-nav'
 import { DashboardSkeleton } from '@/components/ui/skeleton'
 import { MobileMenu } from '@/components/mobile-menu'
-import { Wallet, CheckCircle, Users, ArrowUpRight, Plus, Gift, Trophy, LogOut, ExternalLink, TrendingUp } from 'lucide-react'
+import { Wallet, CheckCircle, Users, ArrowUpRight, Plus, Gift, Trophy, LogOut, ExternalLink, TrendingUp, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useRegisterScrollRefresh } from '@/contexts/ScrollRefreshContext'
 import { formatActivityTimestamp } from '@/lib/utils/formatTime'
@@ -60,6 +60,8 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [animatedBalance, setAnimatedBalance] = useState(0)
+  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking')
+  const [missingEnvVars, setMissingEnvVars] = useState<string[]>([])
   const userRef = useRef<any>(null)
   const unsubscribeTransactionsRef = useRef<(() => void) | null>(null)
 
@@ -88,6 +90,24 @@ export default function DashboardPage() {
   }, [userData?.walletBalance])
 
   useEffect(() => {
+    // Check for missing env vars on mount
+    const missing = getMissingEnvVars()
+    if (missing.length > 0) {
+      console.error('[Dashboard] Missing environment variables:', missing)
+      setMissingEnvVars(missing)
+      toast.error(`Firebase config missing: ${missing.join(', ')}`)
+    }
+
+    // Test Firestore connection
+    const testConnection = async () => {
+      const isConnected = await testFirestoreConnection()
+      setConnectionStatus(isConnected ? 'connected' : 'error')
+      if (!isConnected) {
+        toast.error('Database connection failed. Please check your internet.')
+      }
+    }
+    testConnection()
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         console.log('[Dashboard] No auth state, redirecting to login...')
@@ -107,6 +127,7 @@ export default function DashboardPage() {
           toast.error('Network connection issue. Some data may not load. Retrying...')
           // Stay logged in - don't redirect
           setLoading(false)
+          setConnectionStatus('error')
           return
         }
         
@@ -119,6 +140,7 @@ export default function DashboardPage() {
         }
         
         console.log('[Dashboard] User document found successfully')
+        setConnectionStatus('connected')
         const userData = userDataResult.data as DashboardUserData
         
         // Check if user is banned
@@ -272,6 +294,41 @@ export default function DashboardPage() {
         <Sidebar />
         <main className="flex-1 p-3 md:p-6">
           <div className="max-w-6xl mx-auto">
+            {/* Environment Variable Error Banner */}
+            {missingEnvVars.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg"
+              >
+                <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                  <AlertCircle className="w-5 h-5" />
+                  <div>
+                    <p className="font-semibold">Configuration Error</p>
+                    <p className="text-sm">Missing environment variables: {missingEnvVars.join(', ')}</p>
+                    <p className="text-xs mt-1">Please check Vercel environment settings.</p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Connection Status Banner */}
+            {connectionStatus === 'error' && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-4 p-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded-lg"
+              >
+                <div className="flex items-center gap-2 text-yellow-700 dark:text-yellow-400">
+                  <AlertCircle className="w-5 h-5" />
+                  <div>
+                    <p className="font-semibold">Connection Issue</p>
+                    <p className="text-sm">Unable to connect to database. Please check your internet connection.</p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             <motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
