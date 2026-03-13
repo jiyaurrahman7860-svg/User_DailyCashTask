@@ -561,11 +561,12 @@ export async function handleGoogleRedirectResult(
  * This is used by the dashboard to ensure data is loaded correctly
  * 
  * @param {string} uid - User's Firebase Auth UID
- * @returns {Promise<{exists: boolean; data: UserData | null; error?: string}>}
+ * @returns {Promise<{exists: boolean; data: UserData | null; isNetworkError?: boolean; error?: string}>}
  */
 export async function fetchUserData(uid: string): Promise<{ 
   exists: boolean
   data: UserData | null
+  isNetworkError?: boolean
   error?: string 
 }> {
   if (!uid) {
@@ -586,9 +587,21 @@ export async function fetchUserData(uid: string): Promise<{
     
   } catch (error: any) {
     console.error('[GoogleAuth] Error fetching user data:', error)
+    
+    // Check if this is a network/offline error
+    const isNetworkError = error.code === 'unavailable' || 
+                           error.code === 'network-request-failed' ||
+                           error.message?.includes('client is offline') ||
+                           error.message?.includes('Failed to get document because the client is offline')
+    
+    if (isNetworkError) {
+      console.log('[GoogleAuth] Network error detected, will retry...')
+    }
+    
     return { 
       exists: false, 
       data: null, 
+      isNetworkError,
       error: error.message || 'Failed to fetch user data' 
     }
   }
@@ -596,9 +609,10 @@ export async function fetchUserData(uid: string): Promise<{
 
 /**
  * Retry wrapper for fetchUserData with automatic retries
+ * Distinguishes between network errors (will retry) and "document not found" (won't retry)
  * @param {string} uid - User's Firebase Auth UID
  * @param {number} maxRetries - Maximum number of retry attempts
- * @returns {Promise<{exists: boolean; data: UserData | null; error?: string}>}
+ * @returns {Promise<{exists: boolean; data: UserData | null; isNetworkError?: boolean; error?: string}>}
  */
 export async function fetchUserDataWithRetry(
   uid: string, 
@@ -606,9 +620,11 @@ export async function fetchUserDataWithRetry(
 ): Promise<{ 
   exists: boolean
   data: UserData | null
+  isNetworkError?: boolean
   error?: string 
 }> {
   let lastError: string | undefined
+  let lastIsNetworkError: boolean = false
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     console.log(`[GoogleAuth] Fetch user data attempt ${attempt}/${maxRetries}`)
@@ -620,11 +636,18 @@ export async function fetchUserDataWithRetry(
     }
     
     lastError = result.error
+    lastIsNetworkError = result.isNetworkError || false
+    
+    // If document doesn't exist (not a network error), don't retry - return immediately
+    if (!result.isNetworkError) {
+      console.log('[GoogleAuth] Document does not exist, no need to retry')
+      return result
+    }
     
     // Wait before retry (exponential backoff)
     if (attempt < maxRetries) {
       const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
-      console.log(`[GoogleAuth] Retrying in ${delay}ms...`)
+      console.log(`[GoogleAuth] Network error, retrying in ${delay}ms...`)
       await new Promise(resolve => setTimeout(resolve, delay))
     }
   }
@@ -632,6 +655,7 @@ export async function fetchUserDataWithRetry(
   return { 
     exists: false, 
     data: null, 
+    isNetworkError: lastIsNetworkError,
     error: lastError || 'Failed to fetch user data after retries' 
   }
 }

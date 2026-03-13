@@ -1,5 +1,5 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
+import { getAuth, Auth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { getFunctions, Functions } from 'firebase/functions';
@@ -36,6 +36,13 @@ const app: FirebaseApp = getApps().length === 0
 
 // Export Firebase services from the single instance
 export const auth: Auth = getAuth(app);
+
+// Set auth persistence to LOCAL (survives browser restarts)
+// This prevents auth state loss during reloads
+setPersistence(auth, browserLocalPersistence)
+  .then(() => console.log('[Firebase] Auth persistence set to LOCAL'))
+  .catch((err) => console.error('[Firebase] Failed to set auth persistence:', err));
+
 export const db: Firestore = getFirestore(app);
 export const storage: FirebaseStorage = getStorage(app);
 export const functions: Functions = getFunctions(app);

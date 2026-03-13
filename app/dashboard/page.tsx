@@ -90,25 +90,40 @@ export default function DashboardPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
+        console.log('[Dashboard] No auth state, redirecting to login...')
         router.push('/login')
         return
       }
+      
+      console.log('[Dashboard] Auth state detected for user:', currentUser.uid)
       setUser(currentUser)
       userRef.current = currentUser
 
       const userDataResult = await fetchUserDataWithRetry(currentUser.uid)
         
-        if (!userDataResult.exists || !userDataResult.data) {
-          console.error('[Dashboard] User document not found, redirecting to login...')
-          toast.error('Account not found. Please login again.')
-          router.push('/login')
+        // Handle network errors - DON'T logout, just show warning
+        if (userDataResult.isNetworkError) {
+          console.error('[Dashboard] Network error fetching user data:', userDataResult.error)
+          toast.error('Network connection issue. Some data may not load. Retrying...')
+          // Stay logged in - don't redirect
+          setLoading(false)
           return
         }
         
+        // Handle document not found - user needs to complete signup
+        if (!userDataResult.exists || !userDataResult.data) {
+          console.error('[Dashboard] User document not found, redirecting to signup...')
+          toast.error('Please complete your registration.')
+          router.push('/signup')
+          return
+        }
+        
+        console.log('[Dashboard] User document found successfully')
         const userData = userDataResult.data as DashboardUserData
         
         // Check if user is banned
         if (userData.isBanned) {
+          console.log('[Dashboard] User is banned, redirecting to banned page...')
           router.push('/banned')
           return
         }
