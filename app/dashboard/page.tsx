@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { collection, query, where, onSnapshot, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore'
-import { auth, db, testFirestoreConnection, getMissingEnvVars } from '@/lib/firebase/config'
+import { auth, db, getMissingEnvVars } from '@/lib/firebase/config'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Navbar } from '@/components/navbar'
@@ -98,23 +98,13 @@ export default function DashboardPage() {
       toast.error(`Firebase config missing: ${missing.join(', ')}`)
     }
 
-    // Test Firestore connection
-    const testConnection = async () => {
-      const isConnected = await testFirestoreConnection()
-      setConnectionStatus(isConnected ? 'connected' : 'error')
-      if (!isConnected) {
-        toast.error('Database connection failed. Please check your internet.')
-      }
-    }
-    testConnection()
-
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         console.log('[Dashboard] No auth state, redirecting to login...')
         router.push('/login')
         return
       }
-      
+
       console.log('[Dashboard] Auth state detected for user:', currentUser.uid)
       setUser(currentUser)
       userRef.current = currentUser
