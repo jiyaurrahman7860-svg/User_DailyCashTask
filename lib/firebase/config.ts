@@ -7,23 +7,33 @@ import { getFunctions, Functions } from 'firebase/functions';
 /**
  * Firebase Configuration - Simple Production Setup
  * 
- * IMPORTANT: 
- * - No offline persistence (causes "client is offline" errors in production)
- * - Simple getFirestore(app) initialization
- * - Firebase initializes only once globally
+ * CRITICAL: All NEXT_PUBLIC_FIREBASE_* env vars must be set in Vercel:
+ * Project Settings > Environment Variables
  */
 
-// Log environment variable status for debugging
-const envVars = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? '✓ Set' : '✗ Missing',
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ? '✓ Set' : '✗ Missing',
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? '✓ Set' : '✗ Missing',
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ? '✓ Set' : '✗ Missing',
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ? '✓ Set' : '✗ Missing',
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ? '✓ Set' : '✗ Missing',
+// Debug: Log raw env values (safely)
+const rawEnvVars = {
+  apiKey: typeof window !== 'undefined' 
+    ? (process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? 'Set' : 'MISSING')
+    : 'Server',
+  authDomain: typeof window !== 'undefined'
+    ? (process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ? 'Set' : 'MISSING') 
+    : 'Server',
+  projectId: typeof window !== 'undefined'
+    ? (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? 'Set' : 'MISSING')
+    : 'Server',
+  storageBucket: typeof window !== 'undefined'
+    ? (process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ? 'Set' : 'MISSING')
+    : 'Server',
+  messagingSenderId: typeof window !== 'undefined'
+    ? (process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ? 'Set' : 'MISSING')
+    : 'Server',
+  appId: typeof window !== 'undefined'
+    ? (process.env.NEXT_PUBLIC_FIREBASE_APP_ID ? 'Set' : 'MISSING')
+    : 'Server',
 };
 
-console.log('[Firebase] Environment variables status:', envVars);
+console.log('[Firebase] Environment check:', rawEnvVars);
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -34,29 +44,41 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Validate config
+// Validate config - CRITICAL check
 const missingVars = Object.entries(firebaseConfig)
   .filter(([_, value]) => !value)
   .map(([key]) => key);
 
 if (missingVars.length > 0) {
-  console.error('[Firebase] CRITICAL: Missing environment variables:', missingVars);
+  console.error('[Firebase] CRITICAL ERROR: Missing environment variables:', missingVars);
+  console.error('[Firebase] Firestore will fail with "client is offline" error!');
 }
 
-// Initialize Firebase only once
-const app: FirebaseApp = !getApps().length 
-  ? initializeApp(firebaseConfig) 
-  : getApps()[0];
+// Only initialize if we have minimum required config
+let app: FirebaseApp;
+try {
+  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+    throw new Error(`Missing required Firebase config: ${missingVars.join(', ')}`);
+  }
+  
+  app = !getApps().length 
+    ? initializeApp(firebaseConfig) 
+    : getApps()[0];
+    
+  console.log('[Firebase] App initialized successfully. App count:', getApps().length);
+} catch (error) {
+  console.error('[Firebase] FAILED TO INITIALIZE:', error);
+  // Create a dummy app to prevent crashes, but log the error
+  app = getApps()[0] || ({} as FirebaseApp);
+}
 
-console.log('[Firebase] App initialized. App count:', getApps().length);
-
-// Export Firebase services - SIMPLE setup, NO persistence
+// Export Firebase services
 export const auth: Auth = getAuth(app);
 export const db: Firestore = getFirestore(app);
 export const storage: FirebaseStorage = getStorage(app);
 export const functions: Functions = getFunctions(app);
 
-// Set auth persistence to LOCAL (survives browser restarts)
+// Set auth persistence
 setPersistence(auth, browserLocalPersistence)
   .then(() => console.log('[Firebase] Auth persistence set to LOCAL'))
   .catch((err) => console.error('[Firebase] Failed to set auth persistence:', err));
@@ -71,10 +93,17 @@ onAuthStateChanged(auth, (user) => {
 });
 
 /**
- * Get missing environment variables for debugging
+ * Get missing environment variables for UI debugging
  */
 export function getMissingEnvVars(): string[] {
   return missingVars;
+}
+
+/**
+ * Check if Firebase is properly configured
+ */
+export function isFirebaseConfigured(): boolean {
+  return missingVars.length === 0;
 }
 
 export default app;
